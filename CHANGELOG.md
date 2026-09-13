@@ -6,6 +6,52 @@ This project follows [Semantic Versioning](https://semver.org/). Each release is
 
 ---
 
+## v2.3.0 — 2026-09-XX
+
+**Theme: correctness batch — 18 tracker defects fixed at the root plus three community contributions, every one gated over the full corpus. The loudest false-positive class in PCB analysis (CP-003 touch-pad clearance) is measured for real now, decoupling association means what it says, power accounting stops dropping loads, and a new SP-001 rule catches the one wiring mistake ERC cannot see.**
+
+### Added
+
+- **SP-001** — two-pin passive or diode with both pins on one net (the part is shorted out; ERC and DRC pass because the netlist is internally consistent). Jumpers, net ties, 0 Ω links and DNP parts are excluded; five or more hits on one net collapse into a single net-level finding, which on the corpus almost always means the net map merged two rails. (#43 — contributed by danielboston38.)
+- `skills/lcsc/scripts/search_lcsc.py` — stdlib-only LCSC/JLCPCB parts search by keyword, MPN or `Cxxxxx`, with `--basic`/`--in-stock`/`--package` filters, `--category` parametric mode, `--details` enriched from LCSC's product-detail endpoint, and `--json`; 21 offline tests wired into CI. (#42 — contributed by AlanRosenthal.)
+- Thermal output: `summary.components_skipped` and a `skipped_components[]` list with reasons (`no_load_estimate`, `no_vout`, `below_min_pdiss`) — a regulator that could not be assessed is named instead of silently vanishing from a 97/100 report. (KH-386)
+- `power_budget.rails[*].other_loads[]` — LED loads (5 mA each), including LEDs one series-resistor hop from the rail, with the resistor named in `via`. (KH-375)
+- PCB `decoupling_placement[].gnd_only_caps` (caps within 10 mm rejected for sharing only ground with the IC); CP-003 findings carry `nets` and `measurement_basis: "filled_polygon"`. (KH-379, KH-373)
+- Via facts `min_pad_drill_mm`; DFM min-drill and `.kicad_pro`/`.kicad_dru` design-rule checks now include footprint pad drills (oval drills use the smaller dimension), so a 0.2 mm thermal via under a QFN trips a 0.3 mm project rule. (KH-383)
+- EMC PD-001 carries `transient_a`, `transient_source` (`config` / `power_budget` / `default`), `peaks_total`, `peaks_shown` and `out_of_band_peaks`; new `.kicad-happy.json` key `project.pdn_transient_current_a` overrides the transient-current assumption. (KH-377)
+- GP-001 reports capacitive-touch-pad nets at INFO with `is_touch_net: true` — the pour clearance under a touch pad is intentional. (KH-378)
+- CI determinism guard gains a second schematic fixture (USB connector with two ESD ICs) so the `differential_pairs[].esd_protection` class stays dead. (KH-406)
+
+### Fixed
+
+- **#44** — PP-001 walks through fuses and polyfuses (connector → fuse → decoupled rail → IC no longer reports "no DC path"), and `is_power_net_name` recognises plain `5V`/`12V`, letter-suffixed rails (`5VSB`, `12VIN`, `5VUSB`), descriptive rails (`USB_5V`, `RAW_5V`, `SERVO_VCC`, `USB_VBUS`, `SYS_VOUT`) while keeping control lines (`5VEN`, `PWM_5V`, `ADC_VBUS`) and op-amp outputs (`OPAMP1_VOUT`) as signals. `0V`, `0VA`, `0VANA` are ground; `0V9`/`0V85` stay rails. (Contributed by danielboston38; KH-407.)
+- CP-003 touch-pad GND clearance is measured from the pad outline to the nearest filled-polygon edge instead of footprint origin to zone bounding box — the old number was 0.0 mm on 78% of emitting boards and labelled deterministic. Touch pads now need positive evidence (library/value naming touch/capacitive, or a `TOUCH`/`TCH` reference); a bare `TP` prefix no longer qualifies, because 95% of CP-003 findings were test points. Pad sampling uses KiCad's absolute pad orientation. (KH-373)
+- DC-001 decoupling distance only associates capacitors that share a non-ground net with the IC, so a ground-only cap nearby no longer fires a spurious DC-001 or suppresses the correct DC-002; boards whose only ICs are ESD parts get their bypass analysis. (KH-379)
+- GP-001 via-antipad credit checks that the via physically spans the probed reference layer — a blind via can no longer mask a real plane gap on a layer it does not reach. (KH-397)
+- The datasheet-authority gates in PS-001, VM-001, PR-004, the regulator VIN rail estimate and the EMC USB-speed classifier receive the project directory and can find `datasheets/extracted/` — they were permanently inert before. (KH-376)
+- Thermal TH-DET assessments from the package table carry heuristic confidence (the finding-level twin was fixed in v2.2.1). (KH-398)
+- BE-001 measures distance to circular board-outline edges as a circle instead of a bogus origin-anchored segment. (KH-399)
+- `power_budget` evaluates the pin it is iterating instead of the first pin of that component on the net (an IC whose `~{SRCLR}` or EN pin sorted first was dropped from its rail), counts regulator-output rails whose names fail the power-name test, and feeds LDO dissipation from the rail's total load. (KH-375)
+- Sleep-current audit consults power-sequencing EN connectivity (a regulator whose EN is tied to its input is always-on, not "disableable"), resolves `+BATT`/`VBAT` voltages from regulator data or a 3.7 V default instead of dropping the battery divider, and ignores sub-100 Ω shunts that read as 740 A "pull-ups". (KH-374)
+- PD-001 no longer models feedback-divider feedforward caps as decouplers (the sole cause of one soak board's +5 V error), defaults the transient assumption to 0.5 A instead of a doubled fallback, demotes anti-resonance peaks above 200 MHz to INFO, prints capacitances in engineering units, and reports "showing N of M". (KH-377)
+- `cross_analysis.py` no longer crashes on `"bounding_box": null` (VS-002 is skipped with a reason); every producer read tolerates explicit nulls. (KH-401)
+- JSONC trailing-comma stripping in `.kicad-happy.json` is string-aware — a value ending in `,}` or `,]` no longer loses its comma. (KH-400)
+- lcsc fetch/sync fall through to LCSC's product-detail endpoint when a jlcsearch hit lacks a datasheet URL (jlcsearch dropped its `extra` block); SKILL.md documents the live API shapes. (KH-405)
+- Output byte-stability: `differential_pairs[].esd_protection`, RF `component_roles` and EMC CK-001 clock-net order no longer depend on the hash seed. (KH-406, KH-396)
+- An `F`-referenced logic IC (a 74LS32 as `F1`) classifies as an IC, not a fuse, so PP-001 does not walk through it; fuse current ratings like `4000mA` still classify as fuses.
+- SPICE runner summary tolerates reports without `total_elapsed_s`.
+
+### Changed
+
+- **PD-001 field rename:** `transient_amps` → `transient_a` (the only non-additive output change in this release).
+- **CP-003 semantics:** touch pads require positive evidence; expect the finding count to drop by roughly 96% corpus-wide and the survivors to report real clearances.
+- `decoupling_placement[].nearby_caps` lists only caps sharing a non-ground net with the IC — DC-001/DC-002/DC-003 move accordingly.
+- Bus aliases stay project-wide: a proposed per-file scoping (KH-395) was implemented, refuted against `kicad-cli`'s netlist on a real project (KiCad resolves `{SPI}` with an alias declared in another sheet), and reverted before release.
+
+**Validation:** full budgeted corpus gate over the whole range (170,014 units, zero downgrades, every moved unit attributed), a 300-project `--full` PCB→EMC→thermal chain A/B (0 crashes), three-seed determinism on every analyzer, contract suite 707 passed, harness unit tree 1,453 passed.
+
+**Thanks:** danielboston38 (#43 SP-001 and #44 fuse/power-rail fixes — both reworked within hours and verified with `kicad-cli` ground truth) and Alan Rosenthal (#42 `search_lcsc.py`).
+
 ## v2.2.1 — 2026-09-01
 
 **Theme: maintenance batch — 25 verified analyzer fixes. Field-reported false positives killed at the root, a whole class of output nondeterminism eliminated with a CI guard to keep it dead, and new observability surfaces so skipped or degraded analysis is visible instead of silent.**
