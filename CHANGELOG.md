@@ -40,6 +40,7 @@ This project follows [Semantic Versioning](https://semver.org/). Each release is
 - Output byte-stability: `differential_pairs[].esd_protection`, RF `component_roles` and EMC CK-001 clock-net order no longer depend on the hash seed. (KH-406, KH-396)
 - An `F`-referenced logic IC (a 74LS32 as `F1`) classifies as an IC, not a fuse, so PP-001 does not walk through it; fuse current ratings like `4000mA` still classify as fuses.
 - SPICE runner summary tolerates reports without `total_elapsed_s`.
+- **#47** — every datasheet sync script (DigiKey, Mouser, LCSC, element14) and the extraction cache wrote `manifest.tmp` then `Path.rename()`d it over the live manifest, which raises `WinError 183` on Windows once the target exists — the second save of any sync run crashed. All six sites use `Path.replace()` (atomic on POSIX, overwrites on Windows). (Reported by dev-nul1, fixed by UfukGuler34 in #48.)
 
 ### Changed
 
@@ -50,7 +51,7 @@ This project follows [Semantic Versioning](https://semver.org/). Each release is
 
 **Validation:** full budgeted corpus gate over the whole range (170,014 units, zero downgrades, every moved unit attributed), a 300-project `--full` PCB→EMC→thermal chain A/B (0 crashes), three-seed determinism on every analyzer, contract suite 707 passed, harness unit tree 1,453 passed.
 
-**Thanks:** danielboston38 (#43 SP-001 and #44 fuse/power-rail fixes — both reworked within hours and verified with `kicad-cli` ground truth) and Alan Rosenthal (#42 `search_lcsc.py`).
+**Thanks:** danielboston38 (#43 SP-001 and #44 fuse/power-rail fixes — both reworked within hours and verified with `kicad-cli` ground truth), Alan Rosenthal (#42 `search_lcsc.py`), dev-nul1 (#47 Windows manifest-save diagnosis, down to the line numbers) and UfukGuler34 (#48 the fix).
 
 ## v2.2.1 — 2026-09-01
 
