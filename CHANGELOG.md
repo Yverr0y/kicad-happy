@@ -6,7 +6,7 @@ This project follows [Semantic Versioning](https://semver.org/). Each release is
 
 ---
 
-## v2.3.0 — 2026-09-XX
+## v2.3.0 — 2026-10-04
 
 **Theme: correctness batch — 18 tracker defects fixed at the root plus three community contributions, every one gated over the full corpus. The loudest false-positive class in PCB analysis (CP-003 touch-pad clearance) is measured for real now, decoupling association means what it says, power accounting stops dropping loads, and a new SP-001 rule catches the one wiring mistake ERC cannot see.**
 
