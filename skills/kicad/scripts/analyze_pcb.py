@@ -5289,15 +5289,19 @@ def analyze_thermal_pad_vias(footprints: list[dict], vias: dict,
             ay = pad.get("abs_y", fp["y"])
             net_num = pad.get("net_number", -1)
 
-            # Count vias within the thermal pad area
-            # Account for footprint + pad rotation: the pad's width/height are
-            # in the footprint's local coordinate frame, but the via positions
-            # are in board space.  Rotate the via-to-pad offset back into the
-            # pad's local frame for the rectangular containment check.
-            fp_angle = fp.get("angle", 0)
-            pad_angle = pad.get("angle", 0)
-            total_angle = fp_angle + pad_angle
-            total_rad = math.radians(-total_angle) if total_angle != 0 else 0.0
+            # Rotate the via-to-pad offset back into the pad's local frame
+            # for the rectangular containment check. KiCad writes a pad's
+            # (at x y angle) orientation as the ABSOLUTE board orientation
+            # -- it already includes the footprint's own rotation, so the
+            # footprint angle must NOT be added again (KH-408; same fix as
+            # CP-003's _pad_sample_points in v2.3.0). This check must undo
+            # (not repeat) the local->board placement rotation that pad
+            # corners/vias are given elsewhere (board placement uses -angle,
+            # e.g. _pad_sample_points), so total_rad is NOT negated here --
+            # see _point_in_pad's transposed-matrix form of the same inverse
+            # (VP-001, KH-340) for the equivalent established precedent.
+            total_angle = pad.get("angle", 0) or 0
+            total_rad = math.radians(total_angle) if total_angle != 0 else 0.0
             cos_a = math.cos(total_rad) if total_angle != 0 else 1.0
             sin_a = math.sin(total_rad) if total_angle != 0 else 0.0
 
