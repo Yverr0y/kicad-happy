@@ -3030,7 +3030,18 @@ def analyze_vias(vias: dict, footprints: list[dict],
     # EQ-058: area = π(d/2)² (via annular ring)
     all_vias = vias.get("vias", [])
     if not all_vias:
-        return {}
+        # KH-412: a via-less board can still have footprint pad drills
+        # (including degenerate ones, e.g. HamedMasafi/MeloCar remote_3's
+        # `(drill 0.00001)` pads) worth surfacing — don't drop them just
+        # because there are no vias to analyze.
+        novia_result: dict = {}
+        pad_drills = _pad_drills(footprints)
+        if pad_drills:
+            novia_result["current_capacity"] = {"min_pad_drill_mm": min(pad_drills)}
+        dd = _degenerate_drills(footprints, [])
+        if dd:
+            novia_result["degenerate_drills"] = dd
+        return novia_result
 
     # --- Type breakdown ---
     type_counts: dict[str, int] = {"through": 0, "blind": 0, "buried": 0, "micro": 0}
@@ -3198,7 +3209,10 @@ def analyze_vias(vias: dict, footprints: list[dict],
     drill_sizes: dict[float, int] = {}
     for v in all_vias:
         d = v.get("drill", 0)
-        if d > 0:
+        # KH-412: degenerate drills (file artefacts) are excluded from
+        # every minimum/rating, not just the DFM and design-rule checks —
+        # they're reported separately via `degenerate_drills` instead.
+        if _is_real_drill(d):
             drill_sizes[d] = drill_sizes.get(d, 0) + 1
 
     current_facts: dict = {}
