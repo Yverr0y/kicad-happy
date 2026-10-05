@@ -23,6 +23,75 @@ def snap_to_mil_grid(x_mm: float) -> float:
     """Snap a mm coordinate to the nearest mil grid point."""
     return round(x_mm / _MIL_MM) * _MIL_MM
 
+# ---------------------------------------------------------------------------
+# Part-number field aliases (KH-414, GitHub #46)
+#
+# KiCad lets users name fields however they like. Three alias lists used to
+# live in analyze_schematic, analyze_pcb and bom_manager and drifted apart;
+# this is the single source. Names are stored NORMALIZED (see
+# normalize_field_name) and matched normalized. Deliberately excluded: the
+# two/three-letter bom_manager extras "MP" and "MFN" — too ambiguous for the
+# analyzers (bom_manager keeps them as bom-local extras).
+# ---------------------------------------------------------------------------
+
+def normalize_field_name(name: str) -> str:
+    """Lowercase, trim, collapse internal whitespace.
+
+    'Manufacturer  P/N' -> 'manufacturer p/n'; '  MPN ' -> 'mpn'.
+    """
+    return " ".join(str(name).split()).lower()
+
+
+MPN_FIELD_ALIASES: frozenset = frozenset({
+    # analyze_schematic's historical set
+    "mpn", "mfg part", "partnumber", "part number", "part#",
+    "manufacturer_part_number", "mfr no.", "mfr_no",
+    "manufacturerpartnumber", "partno", "partno.", "mfr_part_number",
+    # bom_manager's unambiguous extras
+    "mfgpart", "manufacturer part number", "manufacturer part #",
+    "mfr no", "manf#", "mfpn", "mpn#",
+    # GitHub #46 (jlecoeur)
+    "manufacturer p/n", "mfr p/n", "mfg p/n",
+})
+
+DIGIKEY_FIELD_ALIASES: frozenset = frozenset({
+    "digikey", "digi-key", "digi-key part number", "digi-key_pn",
+    "digikey part", "digikey part number", "digikey_part_number",
+    "digi-key pn", "dk",
+    # GitHub #46
+    "digikey p/n", "digi-key p/n",
+})
+
+
+def pick_field(props: dict, aliases: frozenset) -> str:
+    """First non-empty value whose normalized key is in *aliases*.
+
+    Iterates *props* in insertion (file) order so the result does not
+    depend on the hash seed when a symbol carries two aliases.
+    """
+    for key, value in props.items():
+        if value and normalize_field_name(key) in aliases:
+            return value
+    return ""
+
+
+def get_property_ci(node: list, aliases: frozenset):
+    """Case/whitespace-insensitive property lookup on an S-expression node.
+
+    Walks ``(property ["private"] "Name" "Value" ...)`` children (the KiCad 9+
+    ``private`` keyword shifts the indices by one, as in
+    sexp_parser.get_property) and returns the first non-empty value whose
+    normalized name is in *aliases*, else None.
+    """
+    for child in node:
+        if isinstance(child, list) and len(child) >= 3 and child[0] == "property":
+            off = 1 if child[1] == "private" else 0
+            if len(child) >= 3 + off and normalize_field_name(child[1 + off]) in aliases:
+                value = str(child[2 + off])
+                if value:
+                    return value
+    return None
+
 # Regulator Vref lookup table — maps part number prefixes to their internal
 # reference voltage.  Used by the feedback divider Vout estimator instead of
 # guessing from a list.  Lookup uses longest-prefix-match so that specific
