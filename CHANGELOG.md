@@ -6,6 +6,28 @@ This project follows [Semantic Versioning](https://semver.org/). Each release is
 
 ---
 
+## v2.3.1 — unreleased
+
+**Theme: maintenance — one field-recognition gap from the field and six v2.3.0 follow-ups.**
+
+### Added
+
+- Shared part-number field aliases (`kicad_utils.MPN_FIELD_ALIASES` / `DIGIKEY_FIELD_ALIASES`): `Manufacturer P/N`, `Mfr P/N`, `Mfg P/N`, `Manufacturer Part Number`, `Manf#`, `Digikey P/N`, `Digi-Key P/N` are recognised by the schematic analyzer, the PCB analyzer and the BOM manager, case- and whitespace-insensitively. (#46 — reported by jlecoeur; KH-414)
+- PCB `vias.via_analysis.degenerate_drills[]` — pad/via drills below 0.05 mm (file artefacts such as `(drill 0.00001)`) are listed here instead of becoming the board minimum. (KH-412)
+- Thermal `skipped_components[].reason` gains `no_pdiss_estimate` for regulators whose dissipation was never estimated upstream. (KH-411)
+
+### Fixed
+
+- Thermal-via-under-pad counting rotated vias by footprint + pad angle; KiCad pad angles are absolute, so rotated QFNs under-counted their vias. (KH-408)
+- CP-003 touch-pad clearance measured from the footprint origin for through-hole touch pads (`*.Cu` layer wildcard was not matched). (KH-413)
+- DFM-001 / design-rule drill violations whose minimum came from a footprint pad now say `pad_drill` / `drill_source: "pad"` instead of `via_drill`. (KH-412)
+- RP-001 on a capacitive-touch net no longer recommends stitching vias inside the intentional void. (KH-410)
+- A malformed `capability_mode.json` in the analysis directory (anything that is not a record with a `run_id`) no longer crashes every analyzer at startup; it is warned about on stderr, left untouched, and a fresh in-memory run id is used. (KH-415)
+- Altium-flat / hybrid projects: bus wires and entries on peer sheets are tagged with their sheet. (KH-409)
+- MPN pick is deterministic when a symbol carries two alias fields (file order, not hash order). (KH-414)
+
+---
+
 ## v2.3.0 — 2026-10-04
 
 **Theme: correctness batch — 18 tracker defects fixed at the root plus three community contributions, every one gated over the full corpus. The loudest false-positive class in PCB analysis (CP-003 touch-pad clearance) is measured for real now, decoupling association means what it says, power accounting stops dropping loads, and a new SP-001 rule catches the one wiring mistake ERC cannot see.**
