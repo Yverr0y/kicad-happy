@@ -9572,21 +9572,12 @@ def analyze_schematic(path: str, project_root: str | None = None,
                             j["_sheet"] = sheet_idx
                         for nc in no_connects:
                             nc["_sheet"] = sheet_idx
-                        # KH-409: peer-sheet bus elements were never tagged,
-                        # so the bus resolver's wires_by_sheet/entries_by_sheet
-                        # (keyed by bw.get("_sheet", 0)) filed every peer's
-                        # bus geometry under sheet 0 alongside the root's,
-                        # building one shared BusGraph instead of one per
-                        # sheet -- a peer's own bus-name label can then never
-                        # find its graph (sheet mismatch), and its taps'
-                        # add_point()/union_with_overlapping_wires() calls run
-                        # under the wrong sheet key, so a validly-labeled tap
-                        # gets bogusly flagged "unlabeled_entry_tap" (KH-409
-                        # repro: tests/fixtures/kh409-altium-bus/, Round 2).
-                        # bus_aliases are deliberately left untagged: per the
-                        # KH-395 oracle finding, kicad-cli resolves bus_alias
-                        # across files, so aliases are project-wide, not
-                        # sheet-scoped.
+                        # KH-409: untagged peer bus_wires/bus_entries made
+                        # build_net_map's wires_by_sheet/entries_by_sheet
+                        # (~line 1457) file every peer's bus geometry under
+                        # sheet 0 with the root's -- one shared BusGraph
+                        # instead of one per sheet, bogusly flagging a valid
+                        # peer tap "unlabeled_entry_tap".
                         for be in bus_elems.get("bus_wires", []):
                             be["_sheet"] = sheet_idx
                         for be in bus_elems.get("bus_entries", []):
