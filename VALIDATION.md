@@ -2,7 +2,7 @@
 
 This document describes how kicad-happy is tested and validated. Every change to the analysis engine is verified against a corpus of real-world KiCad projects before release.
 
-*Auto-generated on 2026-09-13 by `generate_validation_md.py`.*
+*Auto-generated on 2026-10-05 by `generate_validation_md.py`.*
 
 ## Why this matters
 
@@ -65,11 +65,11 @@ Every analysis script runs against every applicable file in the corpus. Nothing 
 
 | Analyzer | Files tested | Success rate |
 |----------|-------------|--------------|
-| Schematic (`analyze_schematic.py`) | 42,305 | 100% |
-| PCB (`analyze_pcb.py`) | 24,459 | 100% |
-| Gerber (`analyze_gerbers.py`) | 7,726 | 100% |
-| EMC (`analyze_emc.py`) | 42,513 | 100% |
-| SPICE (`simulate_subcircuits.py`) | 42,434 | 100% |
+| Schematic (`analyze_schematic.py`) | 36,462 | 100% |
+| PCB (`analyze_pcb.py`) | 18,751 | 100% |
+| Gerber (`analyze_gerbers.py`) | 5,512 | 100% |
+| EMC (`analyze_emc.py`) | 36,670 | 100% |
+| SPICE (`simulate_subcircuits.py`) | 36,589 | 100% |
 
 A single unhandled exception across any analyzer on any file in the corpus is treated as a release blocker.
 
@@ -77,11 +77,15 @@ A single unhandled exception across any analyzer on any file in the corpus is tr
 
 Hard assertions on known-good output values. If a previously correct result changes, the assertion fails and the change must be investigated.
 
-*Measured via `regression/run_checks.py --json`: 2,756,785 passed / 7 failed / 2 errors out of 2,756,794 (100.0%).*
+*Measured via `regression/run_checks.py --json`: 2,716,971 passed / 7 failed / 2 errors out of 2,716,980 (100.0%).*
 
 | Category | Assertion count | Pass rate |
 |----------|----------------|-----------|
-| **Total** | **2,756,794** | **100.0%** |
+| STRUCT | 1,386,475 | 100.0% |
+| SEED | 1,327,582 | 100.0% |
+| FND | 4,541 | 100.0% |
+| BUGFIX | 237 | 100.0% |
+| **Total** | **2,716,980** | **100.0%** |
 
 Assertions are seeded from validated output and checked on every run. When analyzer logic changes intentionally (new fields, corrected calculations), affected assertions are re-seeded after manual verification.
 
@@ -89,7 +93,7 @@ Assertions are seeded from validated output and checked on every run. When analy
 
 Before any release is tagged, the harness runs the candidate commit and the previous release over the full corpus and diffs every analyzer envelope unit by unit. Every unit that moves (FAIL, Disappeared, NewUnknown) must be attributed to a budget class pre-registered in the change's review record, and no finding may be silently downgraded; unexplained movement fails the gate. The run below is the v2.3.0 batch gate (`788649f` → `b54b5c4`, harness `results/v23_gate/adjudication_v23.md`).
 
-Latest run: section `v23_full`, 170,014 analyzer-runs. Verdict: **CLEAN under the batch budget** — zero severity downgrades, every moved unit attributed (whole-output walk over 149,629 pairs, 0 violations).
+Latest run: section `v23_full`, 170,014 analyzer-runs. Verdict: **CLEAN under the batch budget — zero severity downgrades, every moved unit attributed (whole-output walk over 149,629 pairs, 0 violations)**.
 
 | Outcome | Count |
 |---------|------:|
@@ -104,7 +108,7 @@ Latest run: section `v23_full`, 170,014 analyzer-runs. Verdict: **CLEAN under th
 | WARN | 747 |
 | SKIP | 20,385 |
 
-*A same-line gate is CLEAN when `Downgrades == 0` and every `FAIL`, `Disappeared` and `NewUnknown` unit is attributed to a pre-registered budget class (here: the CP-003 re-measurement and test-point exclusion, the decoupling-association and PDN corrections, the power-budget/sleep-audit accounting fixes, circle-outline board-edge distances, and byte-order-only determinism fixes). `NewKnown`/`NewUpgraded` are intentional new findings; `SKIP` units have no comparable baseline.*
+*A gate is CLEAN when `Downgrades == 0` and every `FAIL`, `Disappeared` and `NewUnknown` unit is attributed to a pre-registered budget class in the adjudication record (a zero-delta gate has none to attribute). `NewKnown`/`NewUpgraded` are intentional new findings; `SKIP` units have no comparable baseline.*
 
 ## Signal detector coverage
 
@@ -205,8 +209,8 @@ The harness requires Python 3.8+ and a checkout of the corpus repos. ngspice is 
 
 All analyzer bugs found during validation are tracked with sequential IDs:
 
-- `KH-001` through `KH-413`: analyzer issues (355 filed, 337 closed, 18 open)
-- `TH-001` through `TH-053`: harness infrastructure issues (44 filed, 33 closed, 11 open)
+- `KH-001` through `KH-415`: analyzer issues (357 filed, 337 closed, 20 open)
+- `TH-001` through `TH-057`: harness infrastructure issues (47 filed, 33 closed, 14 open)
 
 Each closed analyzer issue has a corresponding bugfix regression guard assertion that prevents the bug from returning.
 
@@ -215,16 +219,15 @@ Each closed analyzer issue has a corresponding bugfix regression guard assertion
 | Metric | Value |
 |--------|-------|
 | Repos in corpus | 5,857 |
-| Schematic files | 42,305 |
-| PCB files | 24,459 |
-| Gerber directories | 7,726 |
-| EMC analyses | 42,513 |
-| SPICE simulations | 42,434 |
+| Schematic files | 36,462 |
+| PCB files | 18,751 |
+| Gerber directories | 5,512 |
+| EMC analyses | 36,670 |
+| SPICE simulations | 36,589 |
 | Components parsed | 1,305,789 |
 | Nets traced | 2,090,189 |
-| Regression assertions | 2,756,794 at 100.0% |
+| Regression assertions | 2,716,980 at 100.0% |
 | Bugfix guards | 175 (100% — no regressions) |
 | Closed issues | 337 analyzer + 33 harness |
-| Open issues | 18 analyzer + 11 harness |
+| Open issues | 20 analyzer + 14 harness |
 | Schematic detectors | 65 |
-
