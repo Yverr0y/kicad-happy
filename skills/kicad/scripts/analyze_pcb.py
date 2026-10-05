@@ -5562,13 +5562,36 @@ def analyze_thermal_pad_vias(footprints: list[dict], vias: dict,
 _PASSIVE_REF_RE = re.compile(r"^([A-Za-z0-9_]+/)?(C|R|L|FB)\d+$")
 
 
+def _pad_on_layer(pad: dict, layer: str, default_layer: str) -> bool:
+    """True when `pad` has copper on `layer`.
+
+    Pad `layers` may name layers explicitly ("F.Cu" "B.Cu"), use KiCad's
+    wildcards ("*.Cu" = every copper layer; "F&B.Cu" = outer copper), or be
+    absent (legacy/minimal footprints -> assume the footprint's own layer).
+    Through-hole pads always carry "*.Cu", which is why they were skipped by
+    a literal membership test (KH-413).
+    """
+    layers = pad.get("layers")
+    if not layers:
+        return layer == default_layer
+    if layer in layers:
+        return True
+    if not layer.endswith(".Cu"):
+        return False
+    if "*.Cu" in layers:
+        return True
+    if "F&B.Cu" in layers and layer in ("F.Cu", "B.Cu"):
+        return True
+    return False
+
+
 def _pad_sample_points(fp: dict, fp_layer: str) -> list[tuple[float, float]]:
     """Corners + edge midpoints of every pad of `fp` on `fp_layer` (8 per pad,
-    rotated by the pad angle); footprint origin when no pad has geometry."""
+    rotated by the pad angle; THT pads via their "*.Cu" wildcard, KH-413);
+    footprint origin when no pad has geometry."""
     pts: list[tuple[float, float]] = []
     for pad in fp.get("pads", []):
-        layers = pad.get("layers") or [fp_layer]
-        if fp_layer not in layers or "abs_x" not in pad:
+        if not _pad_on_layer(pad, fp_layer, fp_layer) or "abs_x" not in pad:
             continue
         cx, cy = pad["abs_x"], pad["abs_y"]
         hw, hh = pad.get("width", 0) / 2.0, pad.get("height", 0) / 2.0
