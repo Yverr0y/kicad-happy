@@ -374,8 +374,12 @@ def generate_bom(symbols: list[dict], convention: dict,
         def get_canonical(canonical_name: str) -> str:
             actual_name = field_map.get(canonical_name)
             if actual_name:
-                return props.get(actual_name, "").strip()
-            # Try all known aliases as fallback (normalized match, KH-414)
+                val = props.get(actual_name, "").strip()
+                if val:
+                    return val
+            # Try all known aliases as fallback (normalized match, KH-414).
+            # Also reached when the convention-majority field is empty on
+            # this symbol (final wave fix).
             for actual, val in props.items():
                 if _canonical_for(actual) == canonical_name and val.strip():
                     return val.strip()
