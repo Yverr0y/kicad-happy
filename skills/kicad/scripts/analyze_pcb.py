@@ -37,7 +37,7 @@ from kicad_utils import (is_ground_name, is_power_net_name,
                          extract_pro_design_rules, extract_pro_text_variables,
                          load_kicad_dru, load_lib_tables,
                          find_project_settings_file,
-                         get_property_ci, MPN_FIELD_ALIASES)
+                         get_mpn_property)
 from pcb_connectivity import build_connectivity_graph
 from finding_schema import compute_trust_summary, sort_findings, assign_finding_ids
 from envelopes.pcb import PCBEnvelope
@@ -122,6 +122,10 @@ class ZoneFills:
 
     Requires that zones have been filled in KiCad (Edit → Fill All Zones)
     before the PCB file was saved. Stale fills will produce incorrect results.
+
+    `min_edge_distance` additionally maintains a lazily built per-fill
+    segment grid (KH-420) so nearest-edge queries don't need to walk every
+    vertex of every fill.
     """
 
     def __init__(self) -> None:
@@ -130,6 +134,7 @@ class ZoneFills:
                   tuple[float, float, float, float]]
         ] = []
         self._next_fill_id = 0
+        self._grids: dict[int, tuple] = {}
 
     def add(self, zone_idx: int, layer: str,
             coords: list[tuple[float, float]]) -> None:
@@ -138,6 +143,35 @@ class ZoneFills:
         fill_id = self._next_fill_id
         self._next_fill_id += 1
         self._fills.append((fill_id, zone_idx, layer, coords, bbox))
+
+    def _segment_grid(self, fill_id: int):
+        """Lazily built uniform grid: cell -> indices of polygon segments whose
+        bbox overlaps that cell. (cell_size, ncx, ncy, cells). KH-420."""
+        g = self._grids.get(fill_id)
+        if g is not None:
+            return g
+        _fid, _zidx, _layer, coords, bbox = self._fills[fill_id]
+        assert _fid == fill_id
+        w = max(bbox[2] - bbox[0], 0.0)
+        h = max(bbox[3] - bbox[1], 0.0)
+        cell = max(0.5, max(w, h) / 64.0)
+        ncx = int(w // cell) + 1
+        ncy = int(h // cell) + 1
+        cells: dict = {}
+        n = len(coords)
+        for i in range(n):
+            x1, y1 = coords[i]
+            x2, y2 = coords[(i + 1) % n]
+            cx0 = int((min(x1, x2) - bbox[0]) // cell)
+            cx1 = int((max(x1, x2) - bbox[0]) // cell)
+            cy0 = int((min(y1, y2) - bbox[1]) // cell)
+            cy1 = int((max(y1, y2) - bbox[1]) // cell)
+            for cx in range(cx0, cx1 + 1):
+                for cy in range(cy0, cy1 + 1):
+                    cells.setdefault((cx, cy), []).append(i)
+        g = (cell, ncx, ncy, cells)
+        self._grids[fill_id] = g
+        return g
 
     @property
     def has_data(self) -> bool:
@@ -198,22 +232,74 @@ class ZoneFills:
     def min_edge_distance(self, x: float, y: float, layer: str,
                           zone_idxs: set | None = None) -> float:
         """Distance from (x, y) to the nearest edge of any filled polygon on
-        `layer` (optionally only zones in zone_idxs). inf when none."""
+        `layer` (optionally only zones in zone_idxs). inf when none.
+
+        Uses a lazily built per-fill segment grid (KH-420); results are
+        identical to the full walk. The ring search is centered on the
+        query point's projection onto the fill's bbox (not the point
+        itself) so a point far outside a small/distant fill's bbox still
+        bounds the search to the fill's own grid extent; the cutoff folds
+        in that projection offset via math.hypot so it stays exact.
+        Cutoff is exact: for C = clamp(Q, bbox) and any S inside the
+        bbox, |Q-S| >= hypot(|Q-C|, |C-S|) (projection onto a convex
+        set), and every unvisited segment has |C-S| >= (r-1)*cell.
+        Fills are visited nearest-bbox-first so `best` tightens early and
+        farther fills short-circuit before any grid is even built.
+        """
         best = float("inf")
-        for _fid, zidx, fl, coords, bbox in self._fills:
+        candidates = []
+        for fid, zidx, fl, coords, bbox in self._fills:
             if fl != layer or (zone_idxs is not None and zidx not in zone_idxs):
                 continue
             dx = max(bbox[0] - x, 0.0, x - bbox[2])
             dy = max(bbox[1] - y, 0.0, y - bbox[3])
-            if math.hypot(dx, dy) >= best:
-                continue
+            candidates.append((math.hypot(dx, dy), fid, coords, bbox))
+        candidates.sort(key=lambda c: c[0])
+        for offset, fid, coords, bbox in candidates:
+            if offset >= best:
+                break  # sorted ascending: every remaining candidate is >= offset >= best
+            cell, ncx, ncy, cells = self._segment_grid(fid)
+            # Project (x, y) onto the bbox; this point's cell is always
+            # inside [0, ncx-1] x [0, ncy-1], so max_ring below is bounded
+            # by the fill's own grid size regardless of how far outside
+            # the bbox (x, y) actually is.
+            cx = min(max(x, bbox[0]), bbox[2])
+            cy = min(max(y, bbox[1]), bbox[3])
+            px = min(max(int((cx - bbox[0]) // cell), 0), ncx - 1)
+            py = min(max(int((cy - bbox[1]) // cell), 0), ncy - 1)
+            # Farthest ring that can still hold a grid cell from this point.
+            max_ring = max(px, (ncx - 1) - px, py, (ncy - 1) - py)
+            seen: set = set()
             n = len(coords)
-            for i in range(n):
-                x1, y1 = coords[i]
-                x2, y2 = coords[(i + 1) % n]
-                d = _dist_point_to_segment(x, y, x1, y1, x2, y2)
-                if d < best:
-                    best = d
+            r = 0
+            while r <= max_ring:
+                if r > 0 and math.hypot(offset, (r - 1) * cell) >= best:
+                    break  # exact: every unvisited segment is >= hypot(offset, (r-1)*cell) away
+                # Walk only the O(r) boundary cells of this ring (not the
+                # full (2r+1)^2 square): ring 0 is just the own cell; ring
+                # r>0 is the top/bottom rows and left/right columns of the
+                # (2r+1)x(2r+1) square centered on (px, py).
+                if r == 0:
+                    ring_cells = ((px, py),)
+                else:
+                    ring_cells = [(px + ddx, py - r) for ddx in range(-r, r + 1)]
+                    ring_cells += [(px + ddx, py + r) for ddx in range(-r, r + 1)]
+                    ring_cells += [(px - r, py + ddy) for ddy in range(-r + 1, r)]
+                    ring_cells += [(px + r, py + ddy) for ddy in range(-r + 1, r)]
+                for cell_key in ring_cells:
+                    segs = cells.get(cell_key)
+                    if not segs:
+                        continue
+                    for i in segs:
+                        if i in seen:
+                            continue
+                        seen.add(i)
+                        x1, y1 = coords[i]
+                        x2, y2 = coords[(i + 1) % n]
+                        d = _dist_point_to_segment(x, y, x1, y1, x2, y2)
+                        if d < best:
+                            best = d
+                r += 1
         return best
 
 
@@ -648,7 +734,7 @@ def extract_footprints(root: list) -> list[dict]:
 
         # KH-414: any known MPN alias, case/whitespace-insensitive (was an
         # exact-case lookup of "MPN" / "Mfg Part" only).
-        mpn = get_property_ci(fp, MPN_FIELD_ALIASES) or ""
+        mpn = get_mpn_property(fp) or ""
 
         # Determine SMD vs through-hole + extended attributes
         attr_node = find_first(fp, "attr")

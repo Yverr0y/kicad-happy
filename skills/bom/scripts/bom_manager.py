@@ -41,7 +41,8 @@ _kicad_scripts = Path(__file__).resolve().parent.parent.parent / 'kicad' / 'scri
 if _kicad_scripts.is_dir() and str(_kicad_scripts) not in sys.path:
     sys.path.insert(0, str(_kicad_scripts))
 
-from kicad_utils import (MPN_FIELD_ALIASES, DIGIKEY_FIELD_ALIASES,
+from kicad_utils import (MPN_FIELD_ALIASES, MPN_FIELD_ALIASES_PRIMARY,
+                         MPN_FIELD_ALIASES_GENERIC, DIGIKEY_FIELD_ALIASES,
                          normalize_field_name)
 
 
@@ -85,6 +86,24 @@ for canonical, aliases in FIELD_ALIASES.items():
 def _canonical_for(name: str):
     """Canonical BOM field for an actual KiCad property name, or None."""
     return _ALIAS_LOOKUP.get(normalize_field_name(name))
+
+
+def _first_nonblank_stripped(props: dict, aliases: frozenset) -> str:
+    """First value whose normalized key is in *aliases* and whose .strip() is
+    non-empty, returned STRIPPED (final wave fix)."""
+    for key, value in props.items():
+        v = str(value).strip()
+        if v and normalize_field_name(key) in aliases:
+            return v
+    return ""
+
+
+def _pick_mpn_from_props(props: dict) -> str:
+    """Alias-scan fallback for the mpn canonical (KH-418 tiers; bom-local
+    `mp`/`mfn` count as generic). Whitespace-only values are skipped
+    (final wave fix)."""
+    return (_first_nonblank_stripped(props, MPN_FIELD_ALIASES_PRIMARY)
+            or _first_nonblank_stripped(props, MPN_FIELD_ALIASES_GENERIC | frozenset({"mp", "mfn"})))
 
 # Canonical field names to use when creating new properties
 CANONICAL_NAMES = {
@@ -372,6 +391,22 @@ def generate_bom(symbols: list[dict], convention: dict,
 
         # Extract canonical field values using the project's actual field names
         def get_canonical(canonical_name: str) -> str:
+            if canonical_name == "mpn":
+                # KH-418 round 2: the project's declared MPN field is
+                # authoritative among manufacturer-specific names when it is
+                # itself primary-tier and populated on this symbol — file
+                # order only breaks ties between OTHER primaries.
+                mpn_field = field_map.get("mpn")
+                if (mpn_field and normalize_field_name(mpn_field) in MPN_FIELD_ALIASES_PRIMARY
+                        and props.get(mpn_field, "").strip()):
+                    return props.get(mpn_field, "").strip()
+                # KH-418: a manufacturer-specific field on THIS symbol always
+                # outranks the project's convention-majority field when that
+                # majority field is generic (El-Luhb: majority field is
+                # `Part#`, but this symbol also carries `MPN`).
+                primary = _first_nonblank_stripped(props, MPN_FIELD_ALIASES_PRIMARY)
+                if primary:
+                    return primary
             actual_name = field_map.get(canonical_name)
             if actual_name:
                 val = props.get(actual_name, "").strip()
@@ -380,6 +415,8 @@ def generate_bom(symbols: list[dict], convention: dict,
             # Try all known aliases as fallback (normalized match, KH-414).
             # Also reached when the convention-majority field is empty on
             # this symbol (final wave fix).
+            if canonical_name == "mpn":
+                return _pick_mpn_from_props(props)
             for actual, val in props.items():
                 if _canonical_for(actual) == canonical_name and val.strip():
                     return val.strip()

@@ -42,17 +42,20 @@ def normalize_field_name(name: str) -> str:
     return " ".join(str(name).split()).lower()
 
 
-MPN_FIELD_ALIASES: frozenset = frozenset({
-    # analyze_schematic's historical set
-    "mpn", "mfg part", "partnumber", "part number", "part#",
-    "manufacturer_part_number", "mfr no.", "mfr_no",
-    "manufacturerpartnumber", "partno", "partno.", "mfr_part_number",
-    # bom_manager's unambiguous extras
-    "mfgpart", "manufacturer part number", "manufacturer part #",
-    "mfr no", "manf#", "mfpn", "mpn#",
-    # GitHub #46 (jlecoeur)
+# KH-418: two tiers. A manufacturer-specific name always outranks a generic
+# part-number name (El-Luhb: `Part#` = LCSC code listed before `MPN`). File
+# order breaks ties only WITHIN a tier.
+MPN_FIELD_ALIASES_PRIMARY: frozenset = frozenset({
+    "mpn", "mpn#", "mfpn", "mfg part", "mfgpart",
+    "manufacturer_part_number", "manufacturerpartnumber", "mfr_part_number",
+    "manufacturer part number", "manufacturer part #",
     "manufacturer p/n", "mfr p/n", "mfg p/n",
+    "mfr no.", "mfr_no", "mfr no", "manf#",
 })
+MPN_FIELD_ALIASES_GENERIC: frozenset = frozenset({
+    "partnumber", "part number", "part#", "partno", "partno.",
+})
+MPN_FIELD_ALIASES: frozenset = MPN_FIELD_ALIASES_PRIMARY | MPN_FIELD_ALIASES_GENERIC
 
 DIGIKEY_FIELD_ALIASES: frozenset = frozenset({
     "digikey", "digi-key", "digi-key part number", "digi-key_pn",
@@ -91,6 +94,45 @@ def get_property_ci(node: list, aliases: frozenset):
                 if value:
                     return value
     return None
+
+
+def _pick_nonblank(props: dict, aliases: frozenset) -> str:
+    """First value whose normalized key is in *aliases* and whose .strip() is
+    non-empty, returned RAW (unstripped, so existing output is unchanged)."""
+    for key, value in props.items():
+        if value and str(value).strip() and normalize_field_name(key) in aliases:
+            return value
+    return ""
+
+
+def pick_mpn(props: dict) -> str:
+    """Manufacturer part number: manufacturer-specific aliases first, generic
+    part-number aliases second (KH-418). Whitespace-only values do not win a
+    tier; if no alias has a non-blank value, fall back to the pre-KH-418 pick
+    so blank-only symbols behave exactly as before (final wave fix)."""
+    return (_pick_nonblank(props, MPN_FIELD_ALIASES_PRIMARY)
+            or _pick_nonblank(props, MPN_FIELD_ALIASES_GENERIC)
+            or pick_field(props, MPN_FIELD_ALIASES))
+
+
+def _get_property_ci_nonblank(node: list, aliases: frozenset):
+    """Case/whitespace-insensitive property lookup requiring a non-blank
+    value (same walk as get_property_ci; final wave fix)."""
+    for child in node:
+        if isinstance(child, list) and len(child) >= 3 and child[0] == "property":
+            off = 1 if child[1] == "private" else 0
+            if len(child) >= 3 + off and normalize_field_name(child[1 + off]) in aliases:
+                value = str(child[2 + off])
+                if value.strip():
+                    return value
+    return None
+
+
+def get_mpn_property(node: list):
+    """S-expression counterpart of pick_mpn (KH-418)."""
+    return (_get_property_ci_nonblank(node, MPN_FIELD_ALIASES_PRIMARY)
+            or _get_property_ci_nonblank(node, MPN_FIELD_ALIASES_GENERIC)
+            or get_property_ci(node, MPN_FIELD_ALIASES))
 
 # Regulator Vref lookup table — maps part number prefixes to their internal
 # reference voltage.  Used by the feedback divider Vout estimator instead of
