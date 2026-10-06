@@ -3146,7 +3146,7 @@ def _parse_legacy_single_sheet(path: str) -> tuple:
                                     if field_val.strip() or not comp.get("mpn"):
                                         comp["mpn"] = field_val
                                 elif fl in MPN_FIELD_ALIASES_GENERIC:
-                                    if not comp.get("mpn"):
+                                    if not (comp.get("mpn") or "").strip():
                                         comp["mpn"] = field_val
                                 elif fl in _MANUFACTURER_KEYS:
                                     comp["manufacturer"] = field_val
