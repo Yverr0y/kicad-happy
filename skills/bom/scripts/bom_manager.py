@@ -43,7 +43,7 @@ if _kicad_scripts.is_dir() and str(_kicad_scripts) not in sys.path:
 
 from kicad_utils import (MPN_FIELD_ALIASES, MPN_FIELD_ALIASES_PRIMARY,
                          MPN_FIELD_ALIASES_GENERIC, DIGIKEY_FIELD_ALIASES,
-                         normalize_field_name, pick_field)
+                         normalize_field_name)
 
 
 # ---------------------------------------------------------------------------
@@ -88,11 +88,22 @@ def _canonical_for(name: str):
     return _ALIAS_LOOKUP.get(normalize_field_name(name))
 
 
+def _first_nonblank_stripped(props: dict, aliases: frozenset) -> str:
+    """First value whose normalized key is in *aliases* and whose .strip() is
+    non-empty, returned STRIPPED (final wave fix)."""
+    for key, value in props.items():
+        v = str(value).strip()
+        if v and normalize_field_name(key) in aliases:
+            return v
+    return ""
+
+
 def _pick_mpn_from_props(props: dict) -> str:
     """Alias-scan fallback for the mpn canonical (KH-418 tiers; bom-local
-    `mp`/`mfn` count as generic)."""
-    return (pick_field(props, MPN_FIELD_ALIASES_PRIMARY)
-            or pick_field(props, MPN_FIELD_ALIASES_GENERIC | frozenset({"mp", "mfn"})))
+    `mp`/`mfn` count as generic). Whitespace-only values are skipped
+    (final wave fix)."""
+    return (_first_nonblank_stripped(props, MPN_FIELD_ALIASES_PRIMARY)
+            or _first_nonblank_stripped(props, MPN_FIELD_ALIASES_GENERIC | frozenset({"mp", "mfn"})))
 
 # Canonical field names to use when creating new properties
 CANONICAL_NAMES = {
@@ -393,7 +404,7 @@ def generate_bom(symbols: list[dict], convention: dict,
                 # outranks the project's convention-majority field when that
                 # majority field is generic (El-Luhb: majority field is
                 # `Part#`, but this symbol also carries `MPN`).
-                primary = pick_field(props, MPN_FIELD_ALIASES_PRIMARY)
+                primary = _first_nonblank_stripped(props, MPN_FIELD_ALIASES_PRIMARY)
                 if primary:
                     return primary
             actual_name = field_map.get(canonical_name)
