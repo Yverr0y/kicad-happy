@@ -239,8 +239,10 @@ class ZoneFills:
         query point's projection onto the fill's bbox (not the point
         itself) so a point far outside a small/distant fill's bbox still
         bounds the search to the fill's own grid extent; the cutoff folds
-        in that projection offset via math.hypot so it stays exact (see
-        min_edge_distance's KH-420 ring-cutoff proof in the task record).
+        in that projection offset via math.hypot so it stays exact.
+        Cutoff is exact: for C = clamp(Q, bbox) and any S inside the
+        bbox, |Q-S| >= hypot(|Q-C|, |C-S|) (projection onto a convex
+        set), and every unvisited segment has |C-S| >= (r-1)*cell.
         Fills are visited nearest-bbox-first so `best` tightens early and
         farther fills short-circuit before any grid is even built.
         """
@@ -268,6 +270,7 @@ class ZoneFills:
             # Farthest ring that can still hold a grid cell from this point.
             max_ring = max(px, (ncx - 1) - px, py, (ncy - 1) - py)
             seen: set = set()
+            n = len(coords)
             r = 0
             while r <= max_ring:
                 if r > 0 and math.hypot(offset, (r - 1) * cell) >= best:
@@ -292,7 +295,7 @@ class ZoneFills:
                             continue
                         seen.add(i)
                         x1, y1 = coords[i]
-                        x2, y2 = coords[(i + 1) % len(coords)]
+                        x2, y2 = coords[(i + 1) % n]
                         d = _dist_point_to_segment(x, y, x1, y1, x2, y2)
                         if d < best:
                             best = d
