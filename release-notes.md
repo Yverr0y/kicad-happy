@@ -2,6 +2,16 @@
 
 The story of each kicad-happy release — what changed and why it matters when upgrading. For line-level detail, see the [CHANGELOG](CHANGELOG.md).
 
+## 🔧 v2.3.1 — Maintenance batch
+
+A follow-up to v2.3.0 in three layers. The first is the batch itself: jlecoeur's report that `Manufacturer P/N` and `Digikey P/N` were invisible to the analyzers turned into one shared, case-insensitive alias set for the schematic analyzer, the PCB analyzer and the BOM manager, plus six small v2.3.0 follow-ups — thermal-via counting on rotated QFNs, through-hole touch pads, pad-sourced drill violations, a clearer thermal skip reason, RP-001 wording on touch nets, and bus wires on Altium-style peer sheets. A malformed `capability_mode.json` sidecar, which had been silently crashing every analyzer in one harness environment, is now warned about and bypassed.
+
+The second layer is what the corpus gate caught before the tag. Making the MPN pick deterministic exposed boards where a generic `Part#` holding an LCSC code sat before the real `MPN` in the file, so part-number aliases are now tiered: manufacturer-specific names always win. And the new through-hole touch-pad sampling took a 10×12 touch keyboard from ten seconds to over a hundred; an exact per-fill segment grid brings it back to nine with byte-identical output.
+
+The third layer came from a fresh-eyes soak on a real board after the gate. On its two Ø15 mm round touch pads, CP-003 was sampling the bounding box of the pad, three millimetres outside the copper, and reporting a clearance that was simply wrong; circle and oval pads now sample their real outline, and the via-in-pad list uses the same geometry. The same board showed VM-001 flagging a correct 3.3 V GPIO-to-EN connection as a domain crossing whenever a datasheet extraction existed but lacked the EN threshold, and the diff tool crashing on an EMC comparison. All three are fixed, and the soak's longer list of observations is filed in the tracker.
+
+Upgrading: everything is additive except the MPN re-ranking, which changes which value wins on symbols that carry both a manufacturer-specific and a generic part-number field. CP-003 clearances on round or oval touch pads will move to their true values.
+
 ## 🔧 v2.3.0 — Correctness batch
 
 Eighteen tracker defects fixed at the root, three community contributions, and one proposed fix that ground truth rejected. The headline is CP-003, the touch-pad clearance check: it measured footprint origin to zone bounding box, which is 0.0 mm for any enclosing pour, and it fired on test points because their references start with `TP`. It now measures the pad outline to the nearest filled-polygon edge and only fires on parts that actually claim to be touch pads — expect the finding count to drop by about 96% and the survivors to carry real numbers. The same corpus pass found that KiCad stores pad orientation as an absolute board angle, which the batch now honours.

@@ -6,9 +6,9 @@ This project follows [Semantic Versioning](https://semver.org/). Each release is
 
 ---
 
-## v2.3.1 — unreleased
+## v2.3.1 — 2026-10-06
 
-**Theme: maintenance — one field-recognition gap from the field and six v2.3.0 follow-ups.**
+**Theme: maintenance — one field-recognition gap from the field, six v2.3.0 follow-ups, two regressions the corpus gate caught before the tag, and three defects a fresh-eyes soak found on a real board. Every change gated over the full corpus; the one output change that is not additive is the MPN re-ranking.**
 
 ### Added
 
@@ -16,6 +16,7 @@ This project follows [Semantic Versioning](https://semver.org/). Each release is
 - PCB `vias.via_analysis.degenerate_drills[]` — pad/via drills below 0.05 mm (file artefacts such as `(drill 0.00001)`) are listed here instead of becoming the board minimum. (KH-412)
 - Design-rule `min_via_drill` / `.kicad_dru` `hole_size` violations gain `drill_source` (`via` | `pad`) and, for pads, `source_ref`. (KH-412)
 - Thermal `skipped_components[].reason` gains `no_pdiss_estimate` for regulators whose dissipation was never estimated upstream. (KH-411)
+- Part-number aliases are tiered: manufacturer-specific names (`MPN`, `Manufacturer P/N`, `Mfr Part Number`, …) always outrank generic part-number names (`Part Number`, `Part#`, `PartNo`); file order breaks ties only within a tier, and whitespace-only values never win. The BOM manager's convention-majority field is authoritative among manufacturer-specific names. (KH-418)
 
 ### Fixed
 
@@ -26,6 +27,15 @@ This project follows [Semantic Versioning](https://semver.org/). Each release is
 - A malformed `capability_mode.json` in the analysis directory (anything that is not a record with a `run_id`) no longer crashes every analyzer at startup; it is warned about on stderr, left untouched, and a fresh in-memory run id is used. (KH-415)
 - Altium-flat / hybrid projects: a bus-tapped member wire on a peer sheet now resolves on its own sheet; phantom pinless bus-name nets (`<name>[a..b]`) and false `unlabeled_entry_tap` markers from untagged peer buses disappear, so `statistics.total_nets` may drop. (KH-409)
 - MPN pick is deterministic when a symbol carries two alias fields (file order, not hash order). (KH-414)
+- A generic `Part#` holding an LCSC code no longer outranks an explicit `MPN` on the same symbol — the corpus gate caught this on El-Luhb's NVMe carriers after the file-order pick landed. (KH-418)
+- CP-003 touch-pad sampling on dense boards: `ZoneFills.min_edge_distance` uses a per-fill segment grid (exact, byte-identical output). A 10×12 capacitive-touch keyboard went from 109 s to 8.5 s; v2.3.0 had been 9.8 s. (KH-420)
+- CP-003 samples the real outline of circle and oval pads instead of their bounding box — on a Ø15 mm round touch pad the box corners sat 3 mm outside the copper and read an unrelated fill cutout as the clearance (0.45 mm reported, 1.00 mm true). The via-analysis `via_in_pad` list uses the pad outline and the pad's absolute rotation the same way; vias inside 90°/270°-rotated pads were previously missed. (KH-419)
+- VM-001 no longer reports a 3.3 V GPIO driving a boost converter's EN pin as a "5.0 V / 3.3 V domain crossing" when a trusted datasheet extraction exists but carries no EN threshold; the regulator-EN heuristic runs whenever the datasheet cannot decide, and the finding's provenance now says `heuristic` like its confidence. (KH-424)
+- `diff_analysis.py --text` no longer crashes on EMC diffs whose risk score changed (float delta formatted as an integer). (KH-425)
+
+**Validation:** three budgeted corpus gates over the release range (170,014 units each, zero downgrades, every moved unit attributed), a 300-project `--full` chain A/B per gate, a fresh-eyes soak on a real board (SacMap rev2 run 8), harness unit tree 1,551 passed, contract suite 707 passed.
+
+**Thanks:** jlecoeur (#46 — the `Manufacturer P/N` report with the exact three-list table).
 
 ---
 
