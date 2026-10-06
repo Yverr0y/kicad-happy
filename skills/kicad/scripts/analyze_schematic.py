@@ -52,7 +52,7 @@ from kicad_utils import (
     parse_value,
     parse_voltage_from_net_name as _parse_voltage_from_net_name,
     snap_to_mil_grid as _snap_mil,
-    MPN_FIELD_ALIASES, MPN_FIELD_ALIASES_PRIMARY, MPN_FIELD_ALIASES_GENERIC,
+    MPN_FIELD_ALIASES_PRIMARY, MPN_FIELD_ALIASES_GENERIC,
     DIGIKEY_FIELD_ALIASES, normalize_field_name, pick_field, pick_mpn,
 )
 from kicad_types import AnalysisContext
@@ -3139,7 +3139,12 @@ def _parse_legacy_single_sheet(path: str) -> tuple:
                             if name_match:
                                 fl = normalize_field_name(fname)
                                 if fl in MPN_FIELD_ALIASES_PRIMARY:
-                                    comp["mpn"] = field_val
+                                    # Final wave fix: a blank primary may still SET
+                                    # an unset mpn (old last-wins behaviour for
+                                    # blank-only symbols) but may not OVERWRITE a
+                                    # populated one.
+                                    if field_val.strip() or not comp.get("mpn"):
+                                        comp["mpn"] = field_val
                                 elif fl in MPN_FIELD_ALIASES_GENERIC:
                                     if not comp.get("mpn"):
                                         comp["mpn"] = field_val

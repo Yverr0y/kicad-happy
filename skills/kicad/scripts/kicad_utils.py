@@ -96,17 +96,43 @@ def get_property_ci(node: list, aliases: frozenset):
     return None
 
 
+def _pick_nonblank(props: dict, aliases: frozenset) -> str:
+    """First value whose normalized key is in *aliases* and whose .strip() is
+    non-empty, returned RAW (unstripped, so existing output is unchanged)."""
+    for key, value in props.items():
+        if value and str(value).strip() and normalize_field_name(key) in aliases:
+            return value
+    return ""
+
+
 def pick_mpn(props: dict) -> str:
-    """Manufacturer part number from a property dict, manufacturer-specific
-    aliases first, generic part-number aliases only as a fallback (KH-418)."""
-    return (pick_field(props, MPN_FIELD_ALIASES_PRIMARY)
-            or pick_field(props, MPN_FIELD_ALIASES_GENERIC))
+    """Manufacturer part number: manufacturer-specific aliases first, generic
+    part-number aliases second (KH-418). Whitespace-only values do not win a
+    tier; if no alias has a non-blank value, fall back to the pre-KH-418 pick
+    so blank-only symbols behave exactly as before (final wave fix)."""
+    return (_pick_nonblank(props, MPN_FIELD_ALIASES_PRIMARY)
+            or _pick_nonblank(props, MPN_FIELD_ALIASES_GENERIC)
+            or pick_field(props, MPN_FIELD_ALIASES))
+
+
+def _get_property_ci_nonblank(node: list, aliases: frozenset):
+    """Case/whitespace-insensitive property lookup requiring a non-blank
+    value (same walk as get_property_ci; final wave fix)."""
+    for child in node:
+        if isinstance(child, list) and len(child) >= 3 and child[0] == "property":
+            off = 1 if child[1] == "private" else 0
+            if len(child) >= 3 + off and normalize_field_name(child[1 + off]) in aliases:
+                value = str(child[2 + off])
+                if value.strip():
+                    return value
+    return None
 
 
 def get_mpn_property(node: list):
     """S-expression counterpart of pick_mpn (KH-418)."""
-    return (get_property_ci(node, MPN_FIELD_ALIASES_PRIMARY)
-            or get_property_ci(node, MPN_FIELD_ALIASES_GENERIC))
+    return (_get_property_ci_nonblank(node, MPN_FIELD_ALIASES_PRIMARY)
+            or _get_property_ci_nonblank(node, MPN_FIELD_ALIASES_GENERIC)
+            or get_property_ci(node, MPN_FIELD_ALIASES))
 
 # Regulator Vref lookup table — maps part number prefixes to their internal
 # reference voltage.  Used by the feedback divider Vout estimator instead of
