@@ -37,7 +37,7 @@ from kicad_utils import (is_ground_name, is_power_net_name,
                          extract_pro_design_rules, extract_pro_text_variables,
                          load_kicad_dru, load_lib_tables,
                          find_project_settings_file,
-                         get_property_ci, MPN_FIELD_ALIASES, get_mpn_property)
+                         get_mpn_property)
 from pcb_connectivity import build_connectivity_graph
 from finding_schema import compute_trust_summary, sort_findings, assign_finding_ids
 from envelopes.pcb import PCBEnvelope

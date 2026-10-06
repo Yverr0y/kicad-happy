@@ -380,6 +380,14 @@ def generate_bom(symbols: list[dict], convention: dict,
 
         # Extract canonical field values using the project's actual field names
         def get_canonical(canonical_name: str) -> str:
+            if canonical_name == "mpn":
+                # KH-418: a manufacturer-specific field on THIS symbol always
+                # outranks the project's convention-majority field when that
+                # majority field is generic (El-Luhb: majority field is
+                # `Part#`, but this symbol also carries `MPN`).
+                primary = pick_field(props, MPN_FIELD_ALIASES_PRIMARY)
+                if primary:
+                    return primary
             actual_name = field_map.get(canonical_name)
             if actual_name:
                 val = props.get(actual_name, "").strip()
