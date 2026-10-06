@@ -42,17 +42,20 @@ def normalize_field_name(name: str) -> str:
     return " ".join(str(name).split()).lower()
 
 
-MPN_FIELD_ALIASES: frozenset = frozenset({
-    # analyze_schematic's historical set
-    "mpn", "mfg part", "partnumber", "part number", "part#",
-    "manufacturer_part_number", "mfr no.", "mfr_no",
-    "manufacturerpartnumber", "partno", "partno.", "mfr_part_number",
-    # bom_manager's unambiguous extras
-    "mfgpart", "manufacturer part number", "manufacturer part #",
-    "mfr no", "manf#", "mfpn", "mpn#",
-    # GitHub #46 (jlecoeur)
+# KH-418: two tiers. A manufacturer-specific name always outranks a generic
+# part-number name (El-Luhb: `Part#` = LCSC code listed before `MPN`). File
+# order breaks ties only WITHIN a tier.
+MPN_FIELD_ALIASES_PRIMARY: frozenset = frozenset({
+    "mpn", "mpn#", "mfpn", "mfg part", "mfgpart",
+    "manufacturer_part_number", "manufacturerpartnumber", "mfr_part_number",
+    "manufacturer part number", "manufacturer part #",
     "manufacturer p/n", "mfr p/n", "mfg p/n",
+    "mfr no.", "mfr_no", "mfr no", "manf#",
 })
+MPN_FIELD_ALIASES_GENERIC: frozenset = frozenset({
+    "partnumber", "part number", "part#", "partno", "partno.",
+})
+MPN_FIELD_ALIASES: frozenset = MPN_FIELD_ALIASES_PRIMARY | MPN_FIELD_ALIASES_GENERIC
 
 DIGIKEY_FIELD_ALIASES: frozenset = frozenset({
     "digikey", "digi-key", "digi-key part number", "digi-key_pn",
@@ -91,6 +94,19 @@ def get_property_ci(node: list, aliases: frozenset):
                 if value:
                     return value
     return None
+
+
+def pick_mpn(props: dict) -> str:
+    """Manufacturer part number from a property dict, manufacturer-specific
+    aliases first, generic part-number aliases only as a fallback (KH-418)."""
+    return (pick_field(props, MPN_FIELD_ALIASES_PRIMARY)
+            or pick_field(props, MPN_FIELD_ALIASES_GENERIC))
+
+
+def get_mpn_property(node: list):
+    """S-expression counterpart of pick_mpn (KH-418)."""
+    return (get_property_ci(node, MPN_FIELD_ALIASES_PRIMARY)
+            or get_property_ci(node, MPN_FIELD_ALIASES_GENERIC))
 
 # Regulator Vref lookup table — maps part number prefixes to their internal
 # reference voltage.  Used by the feedback divider Vout estimator instead of

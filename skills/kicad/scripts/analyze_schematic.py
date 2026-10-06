@@ -52,7 +52,8 @@ from kicad_utils import (
     parse_value,
     parse_voltage_from_net_name as _parse_voltage_from_net_name,
     snap_to_mil_grid as _snap_mil,
-    MPN_FIELD_ALIASES, DIGIKEY_FIELD_ALIASES, normalize_field_name, pick_field,
+    MPN_FIELD_ALIASES, MPN_FIELD_ALIASES_PRIMARY, MPN_FIELD_ALIASES_GENERIC,
+    DIGIKEY_FIELD_ALIASES, normalize_field_name, pick_field, pick_mpn,
 )
 from kicad_types import AnalysisContext
 from bus_resolver import BusGraph, expand_bus_name, match_ports
@@ -567,7 +568,7 @@ def extract_components(root: list, lib_symbols: dict, instance_uuid: str = "",
                     if si_entry.get("unit"):
                         unit_num = si_entry["unit"]
         _props = get_properties(sym)
-        mpn = _pick(_props, MPN_FIELD_ALIASES)
+        mpn = pick_mpn(_props)
         manufacturer = _pick(_props, _MANUFACTURER_KEYS)
         digikey = _pick(_props, DIGIKEY_FIELD_ALIASES)
         mouser = _pick(_props, _MOUSER_KEYS)
@@ -3137,8 +3138,11 @@ def _parse_legacy_single_sheet(path: str) -> tuple:
                             fname = name_match.group(1) if name_match else f"Field{field_num}"
                             if name_match:
                                 fl = normalize_field_name(fname)
-                                if fl in MPN_FIELD_ALIASES:
+                                if fl in MPN_FIELD_ALIASES_PRIMARY:
                                     comp["mpn"] = field_val
+                                elif fl in MPN_FIELD_ALIASES_GENERIC:
+                                    if not comp.get("mpn"):
+                                        comp["mpn"] = field_val
                                 elif fl in _MANUFACTURER_KEYS:
                                     comp["manufacturer"] = field_val
                                 elif fl in DIGIKEY_FIELD_ALIASES:

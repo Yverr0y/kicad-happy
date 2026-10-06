@@ -41,8 +41,9 @@ _kicad_scripts = Path(__file__).resolve().parent.parent.parent / 'kicad' / 'scri
 if _kicad_scripts.is_dir() and str(_kicad_scripts) not in sys.path:
     sys.path.insert(0, str(_kicad_scripts))
 
-from kicad_utils import (MPN_FIELD_ALIASES, DIGIKEY_FIELD_ALIASES,
-                         normalize_field_name)
+from kicad_utils import (MPN_FIELD_ALIASES, MPN_FIELD_ALIASES_PRIMARY,
+                         MPN_FIELD_ALIASES_GENERIC, DIGIKEY_FIELD_ALIASES,
+                         normalize_field_name, pick_field)
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +86,13 @@ for canonical, aliases in FIELD_ALIASES.items():
 def _canonical_for(name: str):
     """Canonical BOM field for an actual KiCad property name, or None."""
     return _ALIAS_LOOKUP.get(normalize_field_name(name))
+
+
+def _pick_mpn_from_props(props: dict) -> str:
+    """Alias-scan fallback for the mpn canonical (KH-418 tiers; bom-local
+    `mp`/`mfn` count as generic)."""
+    return (pick_field(props, MPN_FIELD_ALIASES_PRIMARY)
+            or pick_field(props, MPN_FIELD_ALIASES_GENERIC | frozenset({"mp", "mfn"})))
 
 # Canonical field names to use when creating new properties
 CANONICAL_NAMES = {
@@ -380,6 +388,8 @@ def generate_bom(symbols: list[dict], convention: dict,
             # Try all known aliases as fallback (normalized match, KH-414).
             # Also reached when the convention-majority field is empty on
             # this symbol (final wave fix).
+            if canonical_name == "mpn":
+                return _pick_mpn_from_props(props)
             for actual, val in props.items():
                 if _canonical_for(actual) == canonical_name and val.strip():
                     return val.strip()

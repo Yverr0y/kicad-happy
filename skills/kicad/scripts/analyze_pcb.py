@@ -37,7 +37,7 @@ from kicad_utils import (is_ground_name, is_power_net_name,
                          extract_pro_design_rules, extract_pro_text_variables,
                          load_kicad_dru, load_lib_tables,
                          find_project_settings_file,
-                         get_property_ci, MPN_FIELD_ALIASES)
+                         get_property_ci, MPN_FIELD_ALIASES, get_mpn_property)
 from pcb_connectivity import build_connectivity_graph
 from finding_schema import compute_trust_summary, sort_findings, assign_finding_ids
 from envelopes.pcb import PCBEnvelope
@@ -648,7 +648,7 @@ def extract_footprints(root: list) -> list[dict]:
 
         # KH-414: any known MPN alias, case/whitespace-insensitive (was an
         # exact-case lookup of "MPN" / "Mfg Part" only).
-        mpn = get_property_ci(fp, MPN_FIELD_ALIASES) or ""
+        mpn = get_mpn_property(fp) or ""
 
         # Determine SMD vs through-hole + extended attributes
         attr_node = find_first(fp, "attr")
