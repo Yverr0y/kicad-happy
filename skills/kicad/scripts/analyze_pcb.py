@@ -3202,6 +3202,8 @@ def analyze_vias(vias: dict, footprints: list[dict],
                 "hw": pw / 2.0, "hh": ph / 2.0,
                 "net": pad.get("net_number", -1),
                 "layer": fp_layer,
+                "shape": pad.get("shape", ""),
+                "angle": pad.get("angle", 0) or 0,
             })
 
     for v in all_vias:
@@ -3212,8 +3214,7 @@ def analyze_vias(vias: dict, footprints: list[dict],
             # Via must be on the same copper layer as the pad
             if pb["layer"] not in v_layers:
                 continue
-            if (abs(vx - pb["cx"]) <= pb["hw"] and
-                    abs(vy - pb["cy"]) <= pb["hh"]):
+            if _point_in_pad(vx, vy, pb["cx"], pb["cy"], pb["hw"] * 2, pb["hh"] * 2, pb["shape"], pb["angle"]):
                 same_net = v_net == pb["net"]
                 via_in_pad.append({
                     "component": pb["ref"],
@@ -5742,9 +5743,38 @@ def _pad_on_layer(pad: dict, layer: str, default_layer: str) -> bool:
     return False
 
 
+def _pad_outline_points(shape: str, hw: float, hh: float) -> list[tuple[float, float]]:
+    """8 points on a pad's outline in the pad's local frame (unrotated).
+
+    circle: on the circumference at 45° steps (r = max(hw, hh)).
+    oval:   on the stadium boundary at 45° steps — a stadium is the Minkowski
+            sum of a segment and a circle of radius r = min(hw, hh), so the
+            boundary point in direction θ is the segment end on that side
+            plus r·(cos θ, sin θ).
+    other:  the box corners + edge midpoints (unchanged behaviour).
+    KH-419 (SacMap TP1: bbox corners of a Ø15 mm pad sat 3.1 mm outside the
+    copper and read an unrelated fill cutout as the clearance).
+    """
+    if shape == "circle":
+        r = max(hw, hh)
+        return [(r * math.cos(math.radians(a)), r * math.sin(math.radians(a))) for a in range(0, 360, 45)]
+    if shape == "oval":
+        r = min(hw, hh)
+        pts = []
+        for a in range(0, 360, 45):
+            c, s = math.cos(math.radians(a)), math.sin(math.radians(a))
+            if hw >= hh:
+                pts.append((math.copysign(hw - r, c) * (1 if abs(c) > 1e-12 else 0) + r * c, r * s))
+            else:
+                pts.append((r * c, math.copysign(hh - r, s) * (1 if abs(s) > 1e-12 else 0) + r * s))
+        return pts
+    return [(-hw, -hh), (0, -hh), (hw, -hh), (hw, 0), (hw, hh), (0, hh), (-hw, hh), (-hw, 0)]
+
+
 def _pad_sample_points(fp: dict, fp_layer: str) -> list[tuple[float, float]]:
-    """Corners + edge midpoints of every pad of `fp` on `fp_layer` (8 per pad,
-    rotated by the pad angle; THT pads via their "*.Cu" wildcard, KH-413);
+    """Points on the outline of every pad of `fp` on `fp_layer` (8 per pad,
+    rotated by the pad angle; THT pads via their "*.Cu" wildcard, KH-413;
+    circle/oval pads sampled on their true outline, KH-419);
     footprint origin when no pad has geometry."""
     pts: list[tuple[float, float]] = []
     for pad in fp.get("pads", []):
@@ -5757,7 +5787,7 @@ def _pad_sample_points(fp: dict, fp_layer: str) -> list[tuple[float, float]]:
         # rotation, so it must not be added again here.
         pad_abs_angle = pad.get("angle") or 0
         ang = math.radians(-pad_abs_angle)
-        for ox, oy in ((-hw, -hh), (0, -hh), (hw, -hh), (hw, 0), (hw, hh), (0, hh), (-hw, hh), (-hw, 0)):
+        for ox, oy in _pad_outline_points(pad.get("shape", ""), hw, hh):
             pts.append((cx + ox * math.cos(ang) - oy * math.sin(ang),
                         cy + ox * math.sin(ang) + oy * math.cos(ang)))
     return pts or [(fp.get("x", 0), fp.get("y", 0))]
